@@ -1,0 +1,18 @@
+{
+	"appenders": {
+		"file-compress": {
+			"type": "file", 
+			"filename": "logs/pool.log",
+			"maxLogSize": 10240000,
+			"backups": 20, 
+			"compress": true 
+		}
+	
+  	},
+  	"categories": {
+    		"default": {
+			"appenders": [ "file-compress" ], 
+			"level": "debug"
+		}
+  	}
+}

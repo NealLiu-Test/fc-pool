@@ -7,13 +7,11 @@ var os = require('os');
 
 var algos = require('stratum-pool/lib/algoProperties.js');
 
-var CreateRedisClient = require('./createRedisClient.js');
-
 // redis callback Ready check failed bypass trick
-function rediscreateClient(redisConfig) {
-    var client = CreateRedisClient(redisConfig);
-    if (redisConfig.password) {
-        client.auth(redisConfig.password);
+function rediscreateClient(port, host, pass) {
+    var client = redis.createClient(port, host);
+    if (pass) {
+        client.auth(pass);
     }
     return client;
 }
@@ -81,20 +79,19 @@ module.exports = function(logger, portalConfig, poolConfigs){
 
         for (var i = 0; i < redisClients.length; i++){
             var client = redisClients[i];
-            if ((client.client.port === redisConfig.port && client.client.host === redisConfig.host) ||
-                (client.client.path !== null && client.client.path === redisConfig.socket)) {
+            if (client.client.port === redisConfig.port && client.client.host === redisConfig.host){
                 client.coins.push(coin);
                 return;
             }
         }
         redisClients.push({
             coins: [coin],
-            client: rediscreateClient(redisConfig)
+            client: rediscreateClient(redisConfig.port, redisConfig.host, redisConfig.password)
         });
     });
 
     function setupStatsRedis(){
-        redisStats = CreateRedisClient(portalConfig.redis);
+        redisStats = redis.createClient(portalConfig.redis.port, portalConfig.redis.host);
         redisStats.on('error', function(err){
         redisStats.auth(portalConfig.redis.password);
         });
@@ -350,6 +347,18 @@ module.exports = function(logger, portalConfig, poolConfigs){
                     });
                 });
             });
+			
+			//added by liu long ping
+			//calculate payments from last 24 hours
+			var payLast24h = 0;
+			for(var p in it.stats.pools[pool].paymentsLast24h) {
+				var pay = it.stats.pools[pool].paymentsLast24h[p].amounts[a];
+				if (pay){
+					payLast24h += pay;
+				}
+			}
+			payLast24h += totalImmature;
+			//end 
         }, function(err) {
             if (err) {
                 callback("There was an error getting balances");
@@ -359,7 +368,7 @@ module.exports = function(logger, portalConfig, poolConfigs){
             _this.stats.balances = balances;
             _this.stats.address = address;
 
-            cback({totalHeld:coinsRound(totalHeld), totalPaid:coinsRound(totalPaid), totalImmature:satoshisToCoins(totalImmature), balances});
+            cback({totalHeld:coinsRound(totalHeld), totalPaid:coinsRound(totalPaid), totalImmature:satoshisToCoins(totalImmature), payLast24h:coinsRound(payLast24h), balances});
         });
     };
 
@@ -372,6 +381,8 @@ module.exports = function(logger, portalConfig, poolConfigs){
         async.each(redisClients, function(client, callback){
             var windowTime = (((Date.now() / 1000) - portalConfig.website.stats.hashrateWindow) | 0).toString();
             var redisCommands = [];
+			var timeNow = Date.now();
+			var pre24hNow = timeNow.getTime() - 86400000;
 
             var redisCommandTemplates = [
                 ['zremrangebyscore', ':hashrate', '-inf', '(' + windowTime],
@@ -385,7 +396,8 @@ module.exports = function(logger, portalConfig, poolConfigs){
                 ['hgetall', ':shares:roundCurrent'],
                 ['hgetall', ':blocksPendingConfirms'],
                 ['zrange', ':payments', -100, -1],
-                ['hgetall', ':shares:timesCurrent']
+                ['hgetall', ':shares:timesCurrent'],
+				['zrangebyscore', ':payments', pre24hNow, timeNow]
             ];
 
             var commandsPerCoin = redisCommandTemplates.length;
@@ -453,7 +465,8 @@ module.exports = function(logger, portalConfig, poolConfigs){
                             currentRoundShares: (replies[i + 8] || {}),
                             currentRoundTimes: (replies[i + 11] || {}),
                             maxRoundTime: 0,
-                            shareCount: 0
+                            shareCount: 0,
+							paymentsLast24h:[]
                         };
                         for(var j = replies[i + 10].length; j > 0; j--){
                             var jsonObj;
@@ -464,6 +477,17 @@ module.exports = function(logger, portalConfig, poolConfigs){
                             }
                             if (jsonObj !== null) {
                                 coinStats.payments.push(jsonObj);
+                            }
+                        }
+						for(var k = replies[i + 12].length; k > 0; k--){
+                            var jsonPayObj;
+                            try {
+                                jsonPayObj = JSON.parse(replies[i + 12][k-1]);
+                            } catch(e) {
+                                jsonPayObj = null;
+                            }
+                            if (jsonPayObj !== null) {
+                                coinStats.paymentsLast24h.push(jsonPayObj);
                             }
                         }
                         allCoinStats[coinStats.name] = (coinStats);
@@ -501,19 +525,14 @@ module.exports = function(logger, portalConfig, poolConfigs){
                     var miner = parts[1].split('.')[0];
                     var worker = parts[1];
                     var diff = Math.round(parts[0] * 8192);
-                    var lastShare = parseInt(parts[2]);
                     if (workerShares > 0) {
                         coinStats.shares += workerShares;
                         // build worker stats
                         if (worker in coinStats.workers) {
                             coinStats.workers[worker].shares += workerShares;
                             coinStats.workers[worker].diff = diff;
-                            if (lastShare > coinStats.workers[worker].lastShare) {
-                                coinStats.workers[worker].lastShare = lastShare;
-                            }
                         } else {
                             coinStats.workers[worker] = {
-                                lastShare: 0,
                                 name: worker,
                                 diff: diff,
                                 shares: workerShares,
@@ -531,12 +550,8 @@ module.exports = function(logger, portalConfig, poolConfigs){
                         // build miner stats
                         if (miner in coinStats.miners) {
                             coinStats.miners[miner].shares += workerShares;
-                            if (lastShare > coinStats.miners[miner].lastShare) {
-                                coinStats.miners[miner].lastShare = lastShare;
-                            }
                         } else {
                             coinStats.miners[miner] = {
-                                lastShare: 0,
                                 name: miner,
                                 shares: workerShares,
                                 invalidshares: 0,
@@ -556,7 +571,6 @@ module.exports = function(logger, portalConfig, poolConfigs){
                             coinStats.workers[worker].diff = diff;
                         } else {
                             coinStats.workers[worker] = {
-                                lastShare: 0,
                                 name: worker,
                                 diff: diff,
                                 shares: 0,
@@ -576,7 +590,6 @@ module.exports = function(logger, portalConfig, poolConfigs){
                             coinStats.miners[miner].invalidshares -= workerShares; // workerShares is negative number!
                         } else {
                             coinStats.miners[miner] = {
-                                lastShare: 0,
                                 name: miner,
                                 shares: 0,
                                 invalidshares: -workerShares,

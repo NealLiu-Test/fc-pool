@@ -14,14 +14,19 @@ var listener = module.exports = function listener(server, port){
         net.createServer(function(c) {
 
             var data = '';
-            try {
+//            try {
                 c.on('data', function (d) {
                     data += d;
                     if (data.slice(-1) === '\n') {
-                        var message = JSON.parse(data);
-                        _this.emit('command', message.command, message.params, message.options, function(message){
-                            c.end(message);
-                        });
+						try {
+							var message = JSON.parse(data);
+							_this.emit('command', message.command, message.params, message.options, function(message){
+								c.end(message);
+							});							
+						}
+						catch(e){
+							emitLog('CLI listener failed to parse message :' + data);
+						}
                     }
                 });
                 c.on('end', function () {
@@ -30,10 +35,10 @@ var listener = module.exports = function listener(server, port){
                 c.on('error', function () {
                     
                 });
-            }
-            catch(e){
-                emitLog('CLI listener failed to parse message ' + data);
-            }
+//            }
+//            catch(e){
+//                emitLog('CLI listener failed to parse message ' + data);
+//            }
 
         }).listen(port, server, function() {
             emitLog('CLI listening on  ' + server + ":" + port)

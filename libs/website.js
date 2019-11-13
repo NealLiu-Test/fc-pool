@@ -16,7 +16,6 @@ var util = require('stratum-pool/lib/util.js');
 
 var api = require('./api.js');
 
-var CreateRedisClient = require('./createRedisClient.js');
 
 module.exports = function(logger){
 
@@ -44,7 +43,18 @@ module.exports = function(logger){
         'admin.html': 'admin',
         'mining_key.html': 'mining_key',
         'miner_stats.html': 'miner_stats',
-        'payments.html': 'payments'
+        'payments.html': 'payments',
+	'en/index.html': 'en/index',
+        'en/home.html': 'en',
+        'en/getting_started.html': 'en/getting_started',
+        'en/stats.html': 'en/stats',
+        'en/tbs.html': 'en/tbs',
+        'en/workers.html': 'en/workers',
+        'en/api.html': 'en/api',
+        'en/admin.html': 'en/admin',
+        'en/mining_key.html': 'en/mining_key',
+        'en/miner_stats.html': 'en/miner_stats',
+        'en/payments.html': 'en/payments'
     };
 
     var pageTemplates = {};
@@ -58,7 +68,7 @@ module.exports = function(logger){
     var processTemplates = function(){
 
         for (var pageName in pageTemplates){
-            if (pageName === 'index') continue;
+            if (pageName === 'index' || pageName === 'en/index') continue;
             pageProcessed[pageName] = pageTemplates[pageName]({
                 poolsConfigs: poolConfigs,
                 stats: portalStats.stats,
@@ -80,7 +90,18 @@ module.exports = function(logger){
 
     var readPageFiles = function(files){
         async.each(files, function(fileName, callback){
-            var filePath = 'website/' + (fileName === 'index.html' ? '' : 'pages/') + fileName;
+            //var filePath = 'website/' + (fileName === 'index.html' ? '' : 'pages/') + fileName;
+			var filePath = '';
+			if(fileName === 'en/index.html'){
+				filePath = 'website/' + fileName;
+			}
+			else if(fileName && fileName.startWith('en/')){
+				filePath = 'website/en/pages' + fileName.split('/')[1];
+			}
+			else{
+				filePath = 'website/' + (fileName === 'index.html' ? '' : 'pages/') + fileName;
+			}
+				
             fs.readFile(filePath, 'utf8', function(err, data){
                 var pTemp = dot.template(data);
                 pageTemplates[pageFiles[fileName]] = pTemp
@@ -98,7 +119,7 @@ module.exports = function(logger){
 
     // if an html file was changed reload it
     /* requires node-watch 0.5.0 or newer */
-    watch(['./website', './website/pages'], function(evt, filename){
+    watch(['./website', './website/pages', './website/en', 'website/en/pages'], function(evt, filename){
         var basename;
         // support older versions of node-watch automatically
         if (!filename && evt)
@@ -134,7 +155,7 @@ module.exports = function(logger){
     var buildKeyScriptPage = function(){
         async.waterfall([
             function(callback){
-                var client = CreateRedisClient(portalConfig);
+                var client = redis.createClient(portalConfig.redis.port, portalConfig.redis.host);
                 if (portalConfig.redis.password) {
                     client.auth(portalConfig.redis.password);
                 }
@@ -239,6 +260,20 @@ module.exports = function(logger){
             next();
     };
 
+	var enminerpage = function(req, res, next){
+        var address = req.params.address || null;
+        if (address != null) {
+			address = address.split(".")[0];
+            portalStats.getBalanceByAddress(address, function(){
+                processTemplates();
+		res.header('Content-Type', 'text/html');
+                res.end(indexesProcessed['en/miner_stats']);
+            });
+        }
+        else
+            next();
+    };
+	
     var payout = function(req, res, next){
         var address = req.params.address || null;
         if (address != null){
@@ -307,6 +342,7 @@ module.exports = function(logger){
 	//app.get('/payout/:address', payout);
     app.use(compress());
     app.get('/workers/:address', minerpage);
+	app.get('/en/workers/:address', enminerpage);
     app.get('/:page', route);
     app.get('/', route);
 

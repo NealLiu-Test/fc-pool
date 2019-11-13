@@ -6,7 +6,6 @@ var async = require('async');
 
 var Stratum = require('stratum-pool');
 var util = require('stratum-pool/lib/util.js');
-var extend = require('extend');
 
 let badBlocks = {}
 
@@ -15,25 +14,6 @@ module.exports = function(logger){
     var poolConfigs = JSON.parse(process.env.pools);
 
     var enabledPools = [];
-	
-	    //Handle messages from master process sent via IPC
-    process.on('message', function(message) {
-        switch(message.type){
-			case 'reloadpool':
-				let poolName = message.coin;
-				let newConfig = message.config;
-				let result = extend(true, poolConfigs[poolName], JSON.parse(newConfig));
-				if (!result){
-					logger.error('Payments', poolName, 'reloadpool', 'failed to copy the new config into old one. coin:' + message.coin + ', new config:' + newConfig);
-				}
-				else {
-					logger.debug('Payments', poolName, 'reloadpool', 'copy the new config into old one success. coin:' + message.coin + ', new config:' + newConfig);
-				}
-					
-				//poolConfigs[poolName] = JSON.parse(newConfig);
-				break;
-        }
-    });
 
     Object.keys(poolConfigs).forEach(function(coin) {
         var poolOptions = poolConfigs[coin];
@@ -282,7 +262,7 @@ function SetupForPool(logger, poolOptions, setupFinished){
             function (result) {
                 //Check if payments failed because wallet doesn't have enough coins to pay for tx fees
                 if (!result || result.error || result[0].error || !result[0].response) {
-                    logger.error(logSystem, logComponent, 'Error trying to shield balance '+amount+' '+JSON.stringify(result[0].error) + '. params:' + JSON.stringify(params));
+                    logger.error(logSystem, logComponent, 'Error trying to shield balance '+amount+' '+JSON.stringify(result[0].error));
                     callback = function (){};
                     callback(true);
                 }
@@ -322,7 +302,7 @@ function SetupForPool(logger, poolOptions, setupFinished){
             function (result) {
                 //Check if payments failed because wallet doesn't have enough coins to pay for tx fees
                 if (!result || result.error || result[0].error || !result[0].response) {
-                    logger.error(logSystem, logComponent, 'Error trying to send z_address coin balance to payout t_address.'+JSON.stringify(result[0].error) + '. params:' + JSON.stringify(params));
+                    logger.error(logSystem, logComponent, 'Error trying to send z_address coin balance to payout t_address.'+JSON.stringify(result[0].error));
                     callback = function (){};
                     callback(true);
                 }
@@ -469,7 +449,6 @@ function SetupForPool(logger, poolOptions, setupFinished){
         var checkOpids = function() {
             clearTimeout(opidTimeout);
             var checkOpIdSuccessAndGetResult = function(ops) {
-				logger.warning(logSystem, logComponent, 'check operation statuses every 57 seconds');
                 var batchRPC = [];
                 // if there are no op-ids
                 if (ops.length == 0) {

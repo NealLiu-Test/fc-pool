@@ -1,7 +1,6 @@
 var dateFormat = require('dateformat');
 var colors = require('colors');
-var log4js = require("log4js");
-var log4js_config = require("./logConf.json");
+
 
 var severityToColor = function(severity, text) {
     switch(severity) {
@@ -32,8 +31,7 @@ var PoolLogger = function (configuration) {
 
     var logLevelInt = severityValues[configuration.logLevel];
     var logColors = configuration.logColors;
-    log4js.configure(log4js_config);
-    var logger = log4js.getLogger('log_file');
+
 
 
     var log = function(severity, system, component, text, subcat) {
@@ -71,7 +69,7 @@ var PoolLogger = function (configuration) {
             logString += text;
         }
 
-        logger.info(logString);
+        console.log(logString);
 
 
     };

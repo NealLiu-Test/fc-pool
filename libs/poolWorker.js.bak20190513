@@ -1,7 +1,6 @@
 var Stratum = require('stratum-pool');
 var redis   = require('redis');
 var net     = require('net');
-var extend	= require('extend');
 
 var MposCompatibility = require('./mposCompatibility.js');
 var ShareProcessor = require('./shareProcessor.js');
@@ -12,11 +11,6 @@ module.exports = function(logger){
 
     var poolConfigs  = JSON.parse(process.env.pools);
     var portalConfig = JSON.parse(process.env.portalConfig);
-	var lastWorkerName = '';
-	var dupCount = 0;
-	var ipDupCount =0;
-	var lastConn = 0;
-	var lastIP = '';
 
     var forkId = process.env.forkId;
     
@@ -29,11 +23,6 @@ module.exports = function(logger){
         redisClient.auth(portalConfig.redis.password);
     }
     //Handle messages from master process sent via IPC
-    process.title = process.title + ' PoolWorker' + forkId;
-    process.on('uncaughtException', function (err) {
-	logger.error('Pool', 'uncaughtException', 'Thread ' + (parseInt(forkId) + 1), 'error:' + err + ', stack:' + err.stack);
-	process.exit(-1);
-    });;
     process.on('message', function(message) {
         switch(message.type){
 
@@ -55,20 +44,7 @@ module.exports = function(logger){
                     pools[poolTarget].processBlockNotify(message.hash, 'blocknotify script');
 
                 break;
-				
-			case 'reloadpool':
-				let poolName = message.coin;
-				let newConfig = message.config;
-				let result = extend(true, poolConfigs[poolName], JSON.parse(newConfig));
-				if (!result){
-					logger.error('Pool', 'reloadpool', 'Thread ' + (parseInt(forkId) + 1), 'failed to copy the new config into old one. coin:' + message.coin + ', new config:' + newConfig);
-				}
-				else {
-					logger.debug('Pool', 'reloadpool', 'Thread ' + (parseInt(forkId) + 1), 'copy the new config into old one success. coin:' + message.coin + ', new config:' + newConfig);
-				}
-					
-				//poolConfigs[poolName] = JSON.parse(newConfig);
-				break;
+
             // IPC message for pool switching
             case 'coinswitch':
                 var logSystem = 'Proxy';
@@ -162,13 +138,7 @@ module.exports = function(logger){
                 else {
                         pool.daemon.cmd('validateaddress', [String(workerName).split(".")[0]], function (results) {
                             var isValid = results.filter(function (r) {
-				if (!r.response){
-					return false
-				}
-				else {
-					return r.response.isvalid
-				}
-
+                                return r.response.isvalid
                             }).length > 0;
                             authCallback(isValid);
                         });
@@ -181,48 +151,8 @@ module.exports = function(logger){
         }
 
         var authorizeFN = function (ip, port, workerName, password, callback) {
-			let curTime = Date.now();
-			if (workerName !== lastWorkerName){
-				dupCount = 0;
-			}
-			else if (dupCount <3){
-				dupCount++;
-			}
-			else if (curTime - lastConn < 1000){
-				callback({
-					error: null,
-					authorized: false,
-					disconnect: true,
-					ban: true,
-					msg: 'continuously reqeust authorization by this worker in a short time'
-				});
-				dupCount = 0;
-				return;
-			}
-			
-			let ipDupCountCfg = poolOptions.authorize.ipDupCount || 100;
-			if (ip !== lastIP){
-				ipDupCount = 0;
-			}
-			else if (ipDupCount < ipDupCountCfg){
-				ipDupCount ++;
-			}
-			else {
-				callback({
-					error: null,
-					authorized: false,
-					disconnect: true,
-					ban: true,
-					msg: 'continuously reqeust authorization by this IP in a short time'
-				});
-				ipDupCount = 0;
-				return;				
-			}
-			
-			lastWorkerName = workerName;
-			lastConn = curTime;
-			lastIP = ip;
             handlers.auth(port, workerName, password, function(authorized){
+
                 var authString = authorized ? 'Authorized' : 'Unauthorized ';
 
                 logger.debug(logSystem, logComponent, logSubCat, authString + ' ' + workerName + ':' + password + ' [' + ip + ']');
@@ -263,9 +193,7 @@ module.exports = function(logger){
                 callback({
                     error: null,
                     authorized: authorized,
-                    disconnect: false,
-					ban: false,
-					msg: null
+                    disconnect: false
                 });
             });
         };

@@ -80,16 +80,18 @@ module.exports = function(logger, portalConfig, poolConfigs){
 											if (w == balances.balances[b].worker) {
                                                 workers[w].paid = balances.balances[b].paid;
                                                 workers[w].balance = balances.balances[b].balance;
+												workers[w].immature = balances.balances[b].immature;
 											}
 										}
 										workers[w].balance = (workers[w].balance || 0);
 										workers[w].paid = (workers[w].paid || 0);
+										workers[w].immature = (workers[w].immature || 0);
 										totalHash += portalStats.stats.pools[pool].workers[w].hashrate;
 										networkSols = portalStats.stats.pools[pool].poolStats.networkSols;
 									  }
 								  }
 								}
-								res.end(JSON.stringify({miner: address, totalHash: totalHash, totalShares: totalShares, networkSols: networkSols, immature: balances.totalImmature, balance: balances.totalHeld, paid: balances.totalPaid, workers: workers, history: history}));
+								res.end(JSON.stringify({miner: address, totalHash: totalHash, totalShares: totalShares, networkSols: networkSols, immature: balances.totalImmature, balance: balances.totalHeld, paid: balances.totalPaid, workers: workers, history: history, payLast24h:balances.payLast24h}));
 							});
 						});
 					} else {

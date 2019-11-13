@@ -14,7 +14,6 @@ var PoolWorker = require('./libs/poolWorker.js');
 var PaymentProcessor = require('./libs/paymentProcessor.js');
 var Website = require('./libs/website.js');
 var ProfitSwitch = require('./libs/profitSwitch.js');
-var CreateRedisClient = require('./libs/createRedisClient.js');
 
 var algos = require('stratum-pool/lib/algoProperties.js');
 
@@ -203,7 +202,7 @@ var spawnPoolWorkers = function(){
             delete poolConfigs[coin];
         } else if (!connection) {
             redisConfig = pcfg.redis;
-            connection = CreateRedisClient(redisConfig);
+            connection = redis.createClient(redisConfig.port, redisConfig.host);
             if (redisConfig.password != "") {
                 connection.auth(redisConfig.password);
                 connection.on("error", function (err) {
@@ -211,7 +210,8 @@ var spawnPoolWorkers = function(){
                 });
             }
             connection.on('ready', function(){
-                logger.debug('PPLNT', coin, 'TimeShare processing setup with redis (' + connection.snompEndpoint + ')');
+                logger.debug('PPLNT', coin, 'TimeShare processing setup with redis (' + redisConfig.host +
+                    ':' + redisConfig.port  + ')');
             });
         }
     });
@@ -354,10 +354,22 @@ var startCliListener = function(){
                 processCoinSwitchCommand(params, options, reply);
                 break;
             case 'reloadpool':
-                Object.keys(cluster.workers).forEach(function(id) {
-                    cluster.workers[id].send({type: 'reloadpool', coin: params[0] });
-                });
-                reply('reloaded pool ' + params[0]);
+				let newPoolConfigs = options[0];
+				if (!newPoolConfigs){
+					reply('could not reload pool :' + params[0] + ', make sure new config are passed.');
+					break;
+				}
+				
+				if (poolConfigs[params[0]]){
+					Object.keys(cluster.workers).forEach(function(id) {
+						cluster.workers[id].send({type: 'reloadpool', coin: params[0], config: JSON.stringify(newPoolConfigs)});
+					});
+					reply('reloaded pool ' + params[0] + 'success!\n');					
+				}
+				else {
+					reply('could not reload pool :' + params[0] + ', make sure the pool has started.');
+					break;
+				}
                 break;
             default:
                 reply('unrecognized command "' + command + '"');
@@ -498,7 +510,7 @@ var startProfitSwitch = function(){
         portalConfig: JSON.stringify(portalConfig)
     });
     worker.on('exit', function(code, signal){
-        logger.error('Master', 'Profit', 'Profit switching process died, spawning replacement...');
+        logger.error('Master', 'Profit', 'Profit switching process died, spawning replacement... code = ' + code + ', signal = ' + signal);
         setTimeout(function(){
             startWebsite(portalConfig, poolConfigs);
         }, 2000);
@@ -515,7 +527,7 @@ var startProfitSwitch = function(){
 
     startPaymentProcessor();
 
-    startWebsite();
+//    startWebsite();
 
     startProfitSwitch();
 
